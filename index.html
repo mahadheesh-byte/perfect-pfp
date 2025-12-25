@@ -5,14 +5,12 @@
 <title>Perfect PFP</title>
 
 <style>
-  * {
-    box-sizing: border-box;
-  }
+  * { box-sizing: border-box; }
 
   body {
     margin: 0;
     height: 100vh;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: system-ui, sans-serif;
     background: radial-gradient(circle at top, #1b1c2e, #0a0a12);
     display: flex;
     align-items: center;
@@ -24,7 +22,7 @@
     width: 360px;
     padding: 28px;
     border-radius: 22px;
-    background: rgba(20, 20, 35, 0.85);
+    background: rgba(20,20,35,0.85);
     backdrop-filter: blur(14px);
     box-shadow: 0 30px 80px rgba(0,0,0,0.6);
     text-align: center;
@@ -43,30 +41,36 @@
     cursor: pointer;
     margin-bottom: 20px;
     font-size: 14px;
-    transition: 0.25s;
   }
 
-  .dropzone:hover {
-    border-color: #7c7cff;
-    background: rgba(124,124,255,0.05);
-  }
-
-  .pfp {
+  .canvas-wrap {
+    position: relative;
     width: 220px;
     height: 220px;
-    margin: 0 auto 20px;
-    border-radius: 50%;
-    overflow: hidden;
+    margin: 0 auto 14px;
     display: none;
-    box-shadow:
-      0 0 0 4px rgba(255,255,255,0.06),
-      0 20px 50px rgba(0,0,0,0.6);
   }
 
-  .pfp img {
+  canvas {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    border-radius: 12px;
+    background: #000;
+  }
+
+  .circle-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.9);
+    pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.25) inset;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    display: none;
+    margin-bottom: 14px;
   }
 
   button {
@@ -76,20 +80,11 @@
     border-radius: 12px;
     padding: 12px 18px;
     font-size: 14px;
-    font-weight: 500;
     color: white;
     cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.15s;
   }
 
-  button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 25px rgba(124,124,255,0.35);
-  }
-
-  input {
-    display: none;
-  }
+  input[type="file"] { display: none; }
 </style>
 </head>
 
@@ -99,77 +94,86 @@
   <h1>Perfect PFP</h1>
 
   <div class="dropzone" id="dropzone">
-    Drag & drop an image<br>
-    or click to upload
+    Drag & drop an image<br>or click to upload
   </div>
 
-  <div class="pfp" id="pfpPreview">
-    <img id="previewImg">
+  <div class="canvas-wrap" id="wrap">
+    <canvas id="canvas" width="512" height="512"></canvas>
+    <div class="circle-overlay"></div>
   </div>
 
-  <button id="downloadBtn">Download PNG</button>
+  <input type="range" id="zoom" min="1" max="3" step="0.01" value="1">
+
+  <button id="downloadBtn">Download Square PNG</button>
   <input type="file" id="fileInput" accept="image/*">
 </div>
 
 <script>
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
-  const previewImg = document.getElementById("previewImg");
-  const pfpPreview = document.getElementById("pfpPreview");
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const zoomSlider = document.getElementById("zoom");
   const downloadBtn = document.getElementById("downloadBtn");
+  const wrap = document.getElementById("wrap");
+
+  let img = null;
+  let baseScale = 1;
+  let zoom = 1;
 
   dropzone.onclick = () => fileInput.click();
-
   dropzone.ondragover = e => e.preventDefault();
-
   dropzone.ondrop = e => {
     e.preventDefault();
-    handleFile(e.dataTransfer.files[0]);
+    loadImage(e.dataTransfer.files[0]);
   };
+  fileInput.onchange = () => loadImage(fileInput.files[0]);
 
-  fileInput.onchange = () => handleFile(fileInput.files[0]);
-
-  function handleFile(file) {
+  function loadImage(file) {
     if (!file || !file.type.startsWith("image")) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      previewImg.src = reader.result;
-      pfpPreview.style.display = "block";
+    const image = new Image();
+    image.onload = () => {
+      img = image;
+
+      // Fit image into 1x1 square
+      baseScale = canvas.width / Math.max(img.width, img.height);
+      zoom = 1;
+      zoomSlider.value = 1;
+
+      draw();
+
+      wrap.style.display = "block";
+      zoomSlider.style.display = "block";
       downloadBtn.style.display = "inline-block";
     };
-    reader.readAsDataURL(file);
+    image.src = URL.createObjectURL(file);
   }
 
-  // ✅ CORRECT 1×1 ZOOM LOGIC (FILL)
-  downloadBtn.onclick = () => {
-    const size = 512;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
+  zoomSlider.oninput = () => {
+    zoom = parseFloat(zoomSlider.value);
+    draw();
+  };
 
-    const img = previewImg;
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
+  function draw() {
+    if (!img) return;
 
-    // Scale so the shortest side fills the square
-    const scale = size / Math.min(iw, ih);
-    const sw = iw * scale;
-    const sh = ih * scale;
+    const size = canvas.width;
+    ctx.clearRect(0, 0, size, size);
+
+    const scale = baseScale * zoom;
+    const sw = img.width * scale;
+    const sh = img.height * scale;
 
     const dx = (size - sw) / 2;
     const dy = (size - sh) / 2;
 
-    // Circular mask
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-    ctx.clip();
-
     ctx.drawImage(img, dx, dy, sw, sh);
+  }
 
+  downloadBtn.onclick = () => {
     const link = document.createElement("a");
-    link.download = "pfp.png";
+    link.download = "pfp-square.png";
     link.href = canvas.toDataURL("image/png");
     link.click();
   };
